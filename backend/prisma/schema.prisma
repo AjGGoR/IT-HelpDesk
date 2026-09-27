@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  TECHNICIAN
+  ADMIN
+}
+
+enum TicketStatus {
+  NEW
+  IN_PROGRESS
+  WAITING_FOR_USER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum TicketType {
+  SERVICE
+  INCIDENT
+}
+
+enum TicketCategory {
+  HARDWARE
+  SOFTWARE
+  NETWORK
+  ACCOUNTS_ACCESS
+  EMAIL
+  SECURITY
+  OTHER
+}
+
+enum TicketHistoryAction {
+  TICKET_CREATED
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  CATEGORY_CHANGED
+  ASSIGNEE_CHANGED
+  COMMENT_ADDED
+  TICKET_RESOLVED
+  TICKET_CLOSED
+}
+
+model User {
+  id              String          @id @default(uuid()) @db.Uuid
+  email           String          @unique @db.VarChar(320)
+  passwordHash    String          @map("password_hash") @db.VarChar(255)
+  firstName       String          @map("first_name") @db.VarChar(100)
+  lastName        String          @map("last_name") @db.VarChar(100)
+  role            UserRole        @default(USER)
+  isActive        Boolean         @default(true) @map("is_active")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  reportedTickets Ticket[]        @relation("TicketReporter")
+  assignedTickets Ticket[]        @relation("TicketAssignee")
+  comments        Comment[]
+  historyEntries  TicketHistory[] @relation("HistoryActor")
+
+  @@map("users")
+}
+
+model Ticket {
+  id             String          @id @default(uuid()) @db.Uuid
+  ticketNumber   String          @unique @default(dbgenerated("'HD-'::text || lpad(nextval('ticket_number_seq'::regclass)::text, 6, '0'::text)")) @map("ticket_number") @db.VarChar(32)
+  title          String          @db.VarChar(200)
+  description    String          @db.Text
+  type           TicketType
+  category       TicketCategory  @default(OTHER)
+  priority       TicketPriority  @default(MEDIUM)
+  status         TicketStatus    @default(NEW)
+  reporterId     String          @map("reporter_id") @db.Uuid
+  assigneeId     String?         @map("assignee_id") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  resolvedAt     DateTime?       @map("resolved_at") @db.Timestamptz(3)
+  closedAt       DateTime?       @map("closed_at") @db.Timestamptz(3)
+  // Server-calculated SLA deadline (working time, Europe/Warsaw); see sla.service.ts.
+  slaDueAt       DateTime?       @map("sla_due_at") @db.Timestamptz(3)
+  resolutionNote String?         @map("resolution_note") @db.Text
+  reporter       User            @relation("TicketReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  assignee       User?           @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  comments       Comment[]
+  history        TicketHistory[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([type])
+  @@index([slaDueAt])
+  @@index([category])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([reporterId])
+  @@index([assigneeId])
+  @@map("tickets")
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  content   String   @db.Text
+  authorId  String   @map("author_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("comments")
+}
+
+model TicketHistory {
+  id          String              @id @default(uuid()) @db.Uuid
+  ticketId    String              @map("ticket_id") @db.Uuid
+  actorId     String              @map("actor_id") @db.Uuid
+  action      TicketHistoryAction
+  description String              @db.Text
+  oldValue    String?             @map("old_value") @db.Text
+  newValue    String?             @map("new_value") @db.Text
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  ticket      Ticket              @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  actor       User                @relation("HistoryActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_history")
+}

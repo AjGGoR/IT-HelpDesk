@@ -1,0 +1,81 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: helpdesk-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - helpdesk-network
+
+  backend:
+    build:
+      context: ./backend
+      target: production
+    container_name: helpdesk-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 4000
+      FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - helpdesk-network
+
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+    container_name: helpdesk-frontend
+    restart: unless-stopped
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    ports:
+      - "5173:80"
+    networks:
+      - helpdesk-network
+
+  seed:
+    build:
+      context: ./backend
+      target: production
+    container_name: helpdesk-seed
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command: ["node", "dist/prisma/seed.js"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - helpdesk-network
+
+volumes:
+  postgres_data:
+
+networks:
+  helpdesk-network:
+    driver: bridge

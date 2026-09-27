@@ -1,0 +1,23 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+.vite/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Tooling and operating system files
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+
+# Prisma local development files
+*.db
+*.db-journal
+
